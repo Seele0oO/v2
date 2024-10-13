@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultClientTimeout = 10 * time.Second
-	telegramAPIEndpoint  = "https://api.telegram.org"
+	telegramAPIEndpoint  = "https://tgapi.20220228.xyz"
 
 	MarkdownFormatting   = "Markdown"
 	MarkdownV2Formatting = "MarkdownV2"
