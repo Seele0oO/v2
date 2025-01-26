@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 package model // import "miniflux.app/v2/internal/model"
+
 import (
 	"strings"
 
@@ -27,15 +28,40 @@ type EnclosureUpdateRequest struct {
 }
 
 // Html5MimeType will modify the actual MimeType to allow direct playback from HTML5 player for some kind of MimeType
-func (e Enclosure) Html5MimeType() string {
+func (e *Enclosure) Html5MimeType() string {
 	if e.MimeType == "video/m4v" {
 		return "video/x-m4v"
 	}
 	return e.MimeType
 }
 
+func (e *Enclosure) IsAudio() bool {
+	return strings.HasPrefix(strings.ToLower(e.MimeType), "audio/")
+}
+
+func (e *Enclosure) IsVideo() bool {
+	return strings.HasPrefix(strings.ToLower(e.MimeType), "video/")
+}
+
+func (e *Enclosure) IsImage() bool {
+	mimeType := strings.ToLower(e.MimeType)
+	mediaURL := strings.ToLower(e.URL)
+	return strings.HasPrefix(mimeType, "image/") || strings.HasSuffix(mediaURL, ".jpg") || strings.HasSuffix(mediaURL, ".jpeg") || strings.HasSuffix(mediaURL, ".png") || strings.HasSuffix(mediaURL, ".gif")
+}
+
 // EnclosureList represents a list of attachments.
 type EnclosureList []*Enclosure
+
+// FindMediaPlayerEnclosure returns the first enclosure that can be played by a media player.
+func (el EnclosureList) FindMediaPlayerEnclosure() *Enclosure {
+	for _, enclosure := range el {
+		if enclosure.URL != "" && strings.Contains(enclosure.MimeType, "audio/") || strings.Contains(enclosure.MimeType, "video/") {
+			return enclosure
+		}
+	}
+
+	return nil
+}
 
 func (el EnclosureList) ContainsAudioOrVideo() bool {
 	for _, enclosure := range el {
@@ -49,7 +75,7 @@ func (el EnclosureList) ContainsAudioOrVideo() bool {
 func (el EnclosureList) ProxifyEnclosureURL(router *mux.Router) {
 	proxyOption := config.Opts.MediaProxyMode()
 
-	if proxyOption == "all" || proxyOption != "none" {
+	if proxyOption != "none" {
 		for i := range el {
 			if urllib.IsHTTPS(el[i].URL) {
 				for _, mediaType := range config.Opts.MediaProxyResourceTypes() {

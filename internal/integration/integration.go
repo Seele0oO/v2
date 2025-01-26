@@ -9,6 +9,8 @@ import (
 	"miniflux.app/v2/internal/config"
 	"miniflux.app/v2/internal/integration/apprise"
 	"miniflux.app/v2/internal/integration/betula"
+	"miniflux.app/v2/internal/integration/cubox"
+	"miniflux.app/v2/internal/integration/discord"
 	"miniflux.app/v2/internal/integration/espial"
 	"miniflux.app/v2/internal/integration/instapaper"
 	"miniflux.app/v2/internal/integration/linkace"
@@ -322,6 +324,25 @@ func SendEntry(entry *model.Entry, userIntegrations *model.Integration) {
 		}
 	}
 
+	if userIntegrations.CuboxEnabled {
+		slog.Debug("Sending entry to Cubox",
+			slog.Int64("user_id", userIntegrations.UserID),
+			slog.Int64("entry_id", entry.ID),
+			slog.String("entry_url", entry.URL),
+		)
+
+		client := cubox.NewClient(userIntegrations.CuboxAPILink)
+
+		if err := client.SaveLink(entry.URL); err != nil {
+			slog.Error("Unable to send entry to Cubox",
+				slog.Int64("user_id", userIntegrations.UserID),
+				slog.Int64("entry_id", entry.ID),
+				slog.String("entry_url", entry.URL),
+				slog.Any("error", err),
+			)
+		}
+	}
+
 	if userIntegrations.ShioriEnabled {
 		slog.Debug("Sending entry to Shiori",
 			slog.Int64("user_id", userIntegrations.UserID),
@@ -485,6 +506,7 @@ func PushEntries(feed *model.Feed, entries model.Entries, userIntegrations *mode
 			userIntegrations.NtfyUsername,
 			userIntegrations.NtfyPassword,
 			userIntegrations.NtfyIconURL,
+			userIntegrations.NtfyInternalLinks,
 			feed.NtfyPriority,
 		)
 
@@ -493,8 +515,46 @@ func PushEntries(feed *model.Feed, entries model.Entries, userIntegrations *mode
 		}
 	}
 
+	if userIntegrations.AppriseEnabled {
+		slog.Debug("Sending new entries to Apprise",
+			slog.Int64("user_id", userIntegrations.UserID),
+			slog.Int("nb_entries", len(entries)),
+			slog.Int64("feed_id", feed.ID),
+		)
+
+		appriseServiceURLs := userIntegrations.AppriseServicesURL
+		if feed.AppriseServiceURLs != "" {
+			appriseServiceURLs = feed.AppriseServiceURLs
+		}
+
+		client := apprise.NewClient(
+			appriseServiceURLs,
+			userIntegrations.AppriseURL,
+		)
+
+		if err := client.SendNotification(feed, entries); err != nil {
+			slog.Warn("Unable to send new entries to Apprise", slog.Any("error", err))
+		}
+	}
+
+	if userIntegrations.DiscordEnabled {
+		slog.Debug("Sending new entries to Discord",
+			slog.Int64("user_id", userIntegrations.UserID),
+			slog.Int("nb_entries", len(entries)),
+			slog.Int64("feed_id", feed.ID),
+		)
+
+		client := discord.NewClient(
+			userIntegrations.DiscordWebhookLink,
+		)
+
+		if err := client.SendDiscordMsg(feed, entries); err != nil {
+			slog.Warn("Unable to send new entries to Discord", slog.Any("error", err))
+		}
+	}
+
 	// Integrations that only support sending individual entries
-	if userIntegrations.TelegramBotEnabled || userIntegrations.AppriseEnabled {
+	if userIntegrations.TelegramBotEnabled {
 		for _, entry := range entries {
 			if userIntegrations.TelegramBotEnabled {
 				slog.Debug("Sending a new entry to Telegram",
@@ -517,35 +577,6 @@ func PushEntries(feed *model.Feed, entries model.Entries, userIntegrations *mode
 						slog.Int64("user_id", userIntegrations.UserID),
 						slog.Int64("entry_id", entry.ID),
 						slog.String("entry_url", entry.URL),
-						slog.Any("error", err),
-					)
-				}
-			}
-
-			if userIntegrations.AppriseEnabled {
-				slog.Debug("Sending a new entry to Apprise",
-					slog.Int64("user_id", userIntegrations.UserID),
-					slog.Int64("entry_id", entry.ID),
-					slog.String("entry_url", entry.URL),
-					slog.String("apprise_url", userIntegrations.AppriseURL),
-				)
-
-				appriseServiceURLs := userIntegrations.AppriseServicesURL
-				if feed.AppriseServiceURLs != "" {
-					appriseServiceURLs = feed.AppriseServiceURLs
-				}
-
-				client := apprise.NewClient(
-					appriseServiceURLs,
-					userIntegrations.AppriseURL,
-				)
-
-				if err := client.SendNotification(entry); err != nil {
-					slog.Error("Unable to send entry to Apprise",
-						slog.Int64("user_id", userIntegrations.UserID),
-						slog.Int64("entry_id", entry.ID),
-						slog.String("entry_url", entry.URL),
-						slog.String("apprise_url", userIntegrations.AppriseURL),
 						slog.Any("error", err),
 					)
 				}
